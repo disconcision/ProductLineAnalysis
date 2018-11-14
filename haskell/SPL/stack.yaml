@@ -5,4 +5,6 @@ packages:
 extra-deps:
 - z3-4.1.0
 - cudd-0.1.0.4
+extra-lib-dirs:
+- /usr/local/lib
 resolver: lts-8.0

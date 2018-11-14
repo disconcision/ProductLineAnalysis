@@ -4,17 +4,17 @@ module SPL_prop where
 
 import Test.QuickCheck.All
 import SPL
-import Prop
+import PropBDD
 import Shallow.VList as S
 import Deep.VList as D
 import Control.Applicative
 
-p, q, r, s :: Prop
-univ@[p, q, r, s] = mkUniverse ["P", "Q", "R", "S"]
---p = lookup u 0
---q = lookup u 1
---r = lookup u 2
---s = lookup u 3
+_p_, _q_, _r_, _s_ :: (String, Prop)
+univ@[_p_, _q_, _r_, _s_] = mkUniverse ["P", "Q", "R", "S"]
+p = snd _p_
+q = snd _q_
+r = snd _r_
+s = snd _s_
 
 pq = conj[p,q]
 p_q = conj[p, neg q]
@@ -68,11 +68,11 @@ prop_index2 = index x pq == [7]
 prop_index3 = index z _p == []
 
 -- getAllConfigs
-prop_getAllConfigs1 = length (getAllConfigs univ) == 16
+prop_getAllConfigs1 = length (getAllConfigs (map snd univ)) == 16
 
 -- getValidConfigs
-prop_getValidConfigs1 = length (getValidConfigs univ p) == 8
-prop_getValidConfigs2 = length (getValidConfigs univ pq) == 4
+prop_getValidConfigs1 = length (getValidConfigs (map snd univ) p) == 8
+prop_getValidConfigs2 = length (getValidConfigs (map snd univ) pq) == 4
 
 -- Ord
 prop_lt1 = y0 < y

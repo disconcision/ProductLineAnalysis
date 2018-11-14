@@ -1,15 +1,14 @@
 import VList
 import SPL
-import Prop
+import PropBDD
 
-u :: Universe
-u = mkUniverse ["P", "Q", "R", "S"]
 
-p, q, r, s :: Prop
-p = Atom u 0
-q = Atom u 1
-r = Atom u 2
-s = Atom u 3
+_p_, _q_, _r_, _s_ :: (String, Prop)
+univ@[_p_, _q_, _r_, _s_] = mkUniverse ["P", "Q", "R", "S"]
+p = snd _p_
+q = snd _q_
+r = snd _r_
+s = snd _s_
 
 pq = conj[p,q]
 p_q = conj[p, neg q]
@@ -29,8 +28,13 @@ y = mkVars [(-11, _p)]
 z :: Var Int
 z = mkVars [(6, p)]
 
-l0 = VNull
-l1 = VCons w l0
-l2 = VCons x l1
-l3 = VCons y l2
-l4 = VCons z l3
+l0 = vNil
+l1 = vCons w l0
+l2 = vCons x l1
+l3 = vCons y l2
+l4 = vCons z l3
+
+main = do
+    print l1
+    print l2
+    print l3
