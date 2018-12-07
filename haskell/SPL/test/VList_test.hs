@@ -1,10 +1,14 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 import VList
 import SPL
 import PropBDD
+import ShareVis
 
 
 import Control.Monad.State.Lazy
-
+import Data.Tuple
 
 _p_, _q_, _r_, _s_ :: (String, Prop)
 univ@[_p_, _q_, _r_, _s_] = mkUniverse ["P", "Q", "R", "S"]
@@ -20,16 +24,10 @@ _p_q = conj[neg p, neg q]
 _p = neg p
 
 w :: Var Int
-w = mkVars [(12, pq), (2, p_q), (0, _pq), (3, _p_q)]
-
-x :: Var Int
-x = mkVars [(7, pq), (-3, p_q), (-8, _pq), (0, _p_q)]
-
-y :: Var Int
-y = mkVars [(-11, _p), (3, p)]
-
-z :: Var Int
-z = mkVars [(6, p), (2, _p)]
+w = mkVars [(1, pq), (11, p_q), (111, _pq), (1111, _p_q)]
+x = mkVars [(2, pq), (22, p_q), (222, _p)]
+y = mkVars [(3, tt)]
+z = mkVars [(4, p), (44, _p)]
 
 l0 = vNil 
 l1 = vCons w l0
@@ -40,13 +38,10 @@ l4 = vCons z l3
 la = mkVList [y,x,w]
 lb = mkVList [z,y,x,w]
 
-printVar :: Show a => Var a -> String
-printVar (Var xs) = foldl (\ acc x -> case x of (v, pc) -> " v: " ++ (show v) ++ " pc: " ++ (show pc)) "" xs
+listBegin = mkVList[y, z, x, w]
+listEnd = mkVList[w,x,z,y]
+listMiddle = mkVList [x, y, z, w]
 
-
-prettyPrint :: Show a => VList a -> String
-prettyPrint (Var x) = show x
-prettyPrint _ = "?"
 
 -- let's figure out these types. we know
 
@@ -63,36 +58,6 @@ prettyPrint _ = "?"
 -- Vmap :: [(a -> b, Prop)] -> [([a], Prop)] -> [([b], Prop)]
 -- vmap = liftV2 map
 
-{-
-mnMap :: (a -> a) -> VList a -> VList a
-mnMap f vl = let temp = vnull vl
-                 g = (\x ->
-                        if x
-                          then vl
-                          else vCons (fmap f $ vhead vl) (mnMap f (vtail vl)))
-                in fmap g temp 
--}
-
-
---apply (Var fn) x = --compact $
---     unions [apply_ f x | f <- fn] 
-
--- expected type ‘Var (a0 -> b0)’ : [(a0 -> b0, Prop)]
-
-
-
---instance (Show a) => MemMappable (Btree a) where
---    makeNode (Leaf x) = ((show x), [])
---    makeNode (Node x y z) = ((show x), [y, z])
---t0 = Node "woo" (Node "bzz" (Leaf "yaa") (Leaf "boi")) (Leaf "yum")
---main = do showGraph [("t0", t0)]
-
---instance (Show a) => MemMappable (VList a) where
---    makeNode [] = ("null", [])
---    makeNode (x:xs) = ((show x), [xs]) 
---t0 = Node "woo" (Node "bzz" (Leaf "yaa") (Leaf "boi")) (Leaf "yum")
---main = do showGraph [("t0", t0)]
-
 
 vfoldl :: Var (a -> b -> a) -> Var a -> VList b -> Var a
 vfoldl = liftV3 foldl
@@ -100,31 +65,72 @@ vfoldl = liftV3 foldl
 vfoldr :: Var (a -> b -> b) -> Var b -> VList a -> Var b
 vfoldr = liftV3 foldr
 
-
-base :: Var (State Int Int)
-base = mkVarT (get >>= return)
-
-countOps :: VList a -> Var (State Int Int)
-countOps vl = vfoldr (mkVarT f) base vl where
-    f :: a -> (State Int Int) -> (State Int Int)
-    f x y = do
-        count <- get
-        put (count+1)
-        y
-
-
 varToList :: Var a -> [a]
 varToList (Var []) = []
 varToList (Var ((t,prop):xs)) = t : (varToList (Var xs)) 
+
+
+
+countOps :: VList a -> Var (State Int Int)
+countOps vl = vfoldr (mkVarT f) base vl where
+    base = mkVarT (get >>= return) :: Var (State Int Int)
+    f :: a -> (State Int Int) -> (State Int Int)
+    f x state = do
+        count <- get
+        put (count+1)
+        state
+
 
 countAcrossVar :: VList a -> Int
 countAcrossVar vl = sum(varToList vi)
     where vi = (liftV2 evalState) (countOps vl) (mkVarT 0)
 
 
+--instance (Show b) => MemMappable (Var b) where 
+--    makeNode (Var []) = ("null", [])
+--    makeNode (Var (((a,b)):xs)) = ((show a), [Var xs])
+
+
+--[([a], Prop)]
+instance (Show a) => MemMappable (VList a) where
+    makeNode (Var []) = ("null", [])
+    makeNode (Var (a:as)) = ((show a), [Var as])
+    --    makeNode [] = ("null", [])
+--    makeNode ((as, prop):xs) = ((show as), as)
+
+
+
+aa = case l3 of Var ((a,b):xs) -> mapMemRaw a
+bb = case l3 of Var (x:(a,b):xs) -> mapMemRaw a
+cc = case l3 of Var (x:y:(a,b):xs) -> mapMemRaw a
+dd = case l3 of Var (x:y:z:(a,b):[]) -> mapMemRaw a
+
+
+graphVList ls = showGraph $ fmap (\(a,b)-> (show b,a)) $ case ls of Var x -> x
+
+
 main = do
-    print $ countAcrossVar l3
+    graphVList l4
+    --showGraph $ case (fmap (\a -> (show a, a)) l3) of Var x -> x
+    --showGraphRaw $ case l2 of Var ls -> concatMap (\x -> case x of (a,b) -> mapMemRaw a) ls
+    print $ case l3 of Var ((a,b):as) -> a
+    print $ aa
+    print $ bb
+    print $ cc
+    print $ dd
+    print $ vfoldr (mkVarT (+)) (mkVarT 0) l3
+    --showGraph[("l3", l3)]
+    --showGraph [("w", w), ("x", x), ("y", y), ("z", z)]
+    print $ countAcrossVar la
+    print $ case w of
+                Var xs -> xs
+    print $ (liftV2 evalState) (countOps la) (mkVarT 0)
     print $ (liftV2 evalState) (countOps l3) (mkVarT 0)
+    print $ vhead $ vtail l4
+
+    --print $ (liftV2 evalState) (countOps listBegin) (mkVarT 0)
+    --print $ (liftV2 evalState) (countOps listEnd) (mkVarT 0)
+    --print $ (liftV2 evalState) (countOps listMiddle) (mkVarT 0)
  --   print $ (z :: Var Int)
     --print $ vmap (mkVarT (\ x -> x+1)) l3
     --print $ vhead l3
