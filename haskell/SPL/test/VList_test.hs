@@ -35,9 +35,6 @@ l2 = vCons x l1
 l3 = vCons y l2
 l4 = vCons z l3
 
-la = mkVList [y,x,w]
-lb = mkVList [z,y,x,w]
-
 listBegin = mkVList[y, z, x, w]
 listEnd = mkVList[w,x,z,y]
 listMiddle = mkVList [x, y, z, w]
@@ -70,10 +67,9 @@ varToList (Var []) = []
 varToList (Var ((t,prop):xs)) = t : (varToList (Var xs)) 
 
 
-
 countOps :: VList a -> Var (State Int Int)
-countOps vl = vfoldr (mkVarT f) base vl where
-    base = mkVarT (get >>= return) :: Var (State Int Int)
+countOps vl = vfoldr (mkVarT f) (mkVarT base) vl where
+    base = (get >>= return) :: State Int Int
     f :: a -> (State Int Int) -> (State Int Int)
     f x state = do
         count <- get
@@ -86,63 +82,10 @@ countAcrossVar vl = sum(varToList vi)
     where vi = (liftV2 evalState) (countOps vl) (mkVarT 0)
 
 
---instance (Show b) => MemMappable (Var b) where 
---    makeNode (Var []) = ("null", [])
---    makeNode (Var (((a,b)):xs)) = ((show a), [Var xs])
-
-
---[([a], Prop)]
-instance (Show a) => MemMappable (VList a) where
-    makeNode (Var []) = ("null", [])
-    makeNode (Var (a:as)) = ((show a), [Var as])
-    --    makeNode [] = ("null", [])
---    makeNode ((as, prop):xs) = ((show as), as)
-
-
-
-aa = case l3 of Var ((a,b):xs) -> mapMemRaw a
-bb = case l3 of Var (x:(a,b):xs) -> mapMemRaw a
-cc = case l3 of Var (x:y:(a,b):xs) -> mapMemRaw a
-dd = case l3 of Var (x:y:z:(a,b):[]) -> mapMemRaw a
-
-
-graphVList ls = showGraph $ fmap (\(a,b)-> (show b,a)) $ case ls of Var x -> x
+graphVList (Var ls) = showGraph $ fmap (\(a,b)-> (show b,a)) ls
 
 
 main = do
     graphVList l4
-    --showGraph $ case (fmap (\a -> (show a, a)) l3) of Var x -> x
-    --showGraphRaw $ case l2 of Var ls -> concatMap (\x -> case x of (a,b) -> mapMemRaw a) ls
-    print $ case l3 of Var ((a,b):as) -> a
-    print $ aa
-    print $ bb
-    print $ cc
-    print $ dd
-    print $ vfoldr (mkVarT (+)) (mkVarT 0) l3
-    --showGraph[("l3", l3)]
-    --showGraph [("w", w), ("x", x), ("y", y), ("z", z)]
-    print $ countAcrossVar la
-    print $ case w of
-                Var xs -> xs
-    print $ (liftV2 evalState) (countOps la) (mkVarT 0)
-    print $ (liftV2 evalState) (countOps l3) (mkVarT 0)
-    print $ vhead $ vtail l4
-
-    --print $ (liftV2 evalState) (countOps listBegin) (mkVarT 0)
-    --print $ (liftV2 evalState) (countOps listEnd) (mkVarT 0)
-    --print $ (liftV2 evalState) (countOps listMiddle) (mkVarT 0)
- --   print $ (z :: Var Int)
-    --print $ vmap (mkVarT (\ x -> x+1)) l3
-    --print $ vhead l3
-    --print $ vhead la
-    --print $ vnull l3
- --   print $ vlength $ l4
- --   print $ z == (vhead l4)
-
-    --print $ printVar w
-    --print $ fmap (\ x -> x + 100) w
- --   print $ vmap (\ x -> x + 1) l0
-    --print (l0 :: VList Int)
-
- --   print $ l2 |!!| 1
-    --print $ vlength l2
+    --print $ vfoldr (mkVarT (+)) (mkVarT 0) l3
+    print $ countAcrossVar l4
