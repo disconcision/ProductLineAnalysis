@@ -97,43 +97,53 @@ vfoldr f init ls = cond' (vnull ls)
 instance Show (State a b) where
     show _ = "" -- (StateT f)
 
+vLength0 :: Var [a] -> Var Int 
+vLength0 = liftV length
 
-sLength0 :: [a] -> Int
-sLength0 ls = if (null ls) then 0 else ((+) 1 (sLength0 (tail ls)))
+sLength1 :: [a] -> Int
+sLength1 ls = if (null ls) then 0 else ((+) 1 (sLength1 (tail ls)))
 
-vLength0 :: Var [a] -> Var Int    
-vLength0 vl = cond' (vnull vl) (mkVarT 0) ((liftV2 (+)) (mkVarT 1) (vLength0 (vtail vl)))
+vLength1 :: Var [a] -> Var Int    
+vLength1 vl = cond' (vnull vl) (mkVarT 0) ((liftV2 (+)) (mkVarT 1) (vLength1 (vtail vl)))
 -- vLength0 vl = cond' (vnull vl) (mkVarT 0) (fmap (+) (mkVarT 1) <*> (vLength0 (vtail vl)))
 
 
-sLength1 :: [a] -> Int
-sLength1 ls = foldr (const ((+) 1)) 0 ls
+sLength2 :: [a] -> Int
+sLength2 ls = foldr (const ((+) 1)) 0 ls
 -- sLength1 ls = foldr (\x y -> (+) y 1) 0 ls
 
-vLength1 :: Show a => Var [a] -> Var Int
-vLength1 vl = vfoldr (mkVarT (\ x -> (+) 1)) (mkVarT 0) vl
+vLength2 :: Show a => Var [a] -> Var Int
+vLength2 vl = vfoldr (mkVarT (\ x -> (+) 1)) (mkVarT 0) vl
 
 
+
+
+vMap0 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
+vMap0 = liftV2 map
 
 sMap0 :: (a -> b) -> [a] -> [b]
 sMap0 f ls = if null ls
     then []
     else (:) (f (head ls)) (sMap0 f (tail ls))
 
-vMap0 :: Show b => Var (a -> b) -> Var [a] -> Var [b] -- VList a == Var [a]
-vMap0 f vl = cond' (vnull vl)
+vMap1 :: Show b => Var (a -> b) -> Var [a] -> Var [b] -- VList a == Var [a]
+vMap1 f vl = cond' (vnull vl)
     (mkVarT [])
-    $ (vCons ((<*>) f (vhead vl))) (vMap0 f (vtail vl))
+    $ (vCons ((<*>) f (vhead vl))) (vMap1 f (vtail vl))
 
 
 sMap1 :: (a -> b) -> [a] -> [b]
 sMap1 f ls = foldr (\x y -> (:) (f x) y) [] ls
 
---vMap1 :: Show a => Var (a -> b) -> Var [a] -> Var [b]
---vMap1 f vl = vfoldr (mkVarT (\ x y -> (:) (f <*> x) y)) (mkVarT []) vl
+
+-- implemented with (deep) vfoldr
+vMap2 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
+vMap2 f vl = vfoldr new_f (mkVarT []) vl
+        where
+            new_f = fmap (\fz -> (\ x y -> (:) (fz x) y)) f
 
 -- do we actually want deep lifting to lift function args?
--- this creates issues like above
+-- this presents issues like above
 
 
 
@@ -180,22 +190,48 @@ graphVList (Var ls) = showGraph $ fmap (\(a,b)-> (show b,a)) ls
 
 
 
+testfn0 x = 5+x
+testfn1 x = 5+x
+testfn2 x = 5+x
+-- note: belows registers 0 entries under main; ??
+--testfn = (+) 1 
+
+listN = mkVList[w,w,w,w,w,w,w,w,w,w] -- 40 distinct
+listE = mkVList[w,w,w,w,w,y,y,y,y,y] -- 4*5+5=25 distinct 
+listB = mkVList[y,y,y,y,y,w,w,w,w,w] -- 25 distinct
+listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- 6*4+4=28 distinct
+
+-- vMap0 - shallow lift
+-- vMap1 - deep lifted recursive
+-- vMap2 - deep lifted vfoldr (itself deep lifted)
+
+-- results (num calls to testfnX)
+--       vMap0 vMap1 vMap2
+-- listN    40    40    40
+-- listE    40    25    25
+-- listB    40    25    40
+-- listM    40    28    40
+
 main = do
     --graphVList $ listEnd2
+    --print $ vLength0 list1
+    --print $ vLength1 list1
+    --print $ vLength2 list1
+    print $ vMap0 (mkVarT testfn0) listM
+    print $ vMap1 (mkVarT testfn1) listM
+    print $ vMap2 (mkVarT testfn2) listM
+    --print $ vLength1 listEnd
 
-    print $ vLength0 listEnd
-    print $ vLength1 listEnd
-
-    print listEnd
-    print $ (vMap0 (mkVarT ((+)10)) listBegin)
+    --print listEnd
+    --print $ (vMap0 (mkVarT ((+)10)) listBegin)
 
     
-    print $ vCounter listEnd
-    print $ vCounter listEnd2
-    print $ vCounter listEnd3
-    print $ vCounter listEnd4
-    print $ vCounter listEnd5
-    print $ vCounter listBegin
+    --print $ vCounter listEnd
+    --print $ vCounter listEnd2
+    --print $ vCounter listEnd3
+    --print $ vCounter listEnd4
+    --print $ vCounter listEnd5
+    --print $ vCounter listBegin
 
     --print $ getNames listEnd
     --print $ case listEnd of Var ls -> fmap (\(a,b)-> (show b,a)) ls
