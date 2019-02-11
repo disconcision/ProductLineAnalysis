@@ -140,7 +140,7 @@ sMap1 f ls = foldr (\x y -> (:) (f x) y) [] ls
 vMap2 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
 vMap2 f vl = vfoldr new_f (mkVarT []) vl
         where
-            new_f = fmap (\fz -> (\ x y -> (:) (fz x) y)) f
+            new_f = liftV (\vf -> (\ x y -> (:) (vf x) y)) f
 
 -- do we actually want deep lifting to lift function args?
 -- this presents issues like above
@@ -205,6 +205,7 @@ listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- 6*4+4=28 distinct
 -- vMap1 - deep lifted recursive
 -- vMap2 - deep lifted vfoldr (itself deep lifted)
 
+
 -- results (num calls to testfnX)
 --       vMap0 vMap1 vMap2
 -- listN    40    40    40
@@ -212,20 +213,33 @@ listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- 6*4+4=28 distinct
 -- listB    40    25    40
 -- listM    40    28    40
 
+-- above: note that resulting lists are correct
+
+
+-- results (num variations in length)
+--       vLength0 vLength1 vLength2
+-- listN        4        1        4
+-- listE        4        1        4
+-- listB        4        1        2
+-- listM        3        1        3
+
 main = do
+
+    print $ vLength0 listM
+    print $ vLength1 listM 
+    print $ vLength2 listM
+
+    print $ vMap0 (mkVarT testfn0) listE
+    print $ vMap1 (mkVarT testfn1) listE
+    print $ vMap2 (mkVarT testfn2) listE
+
     --graphVList $ listEnd2
-    --print $ vLength0 list1
-    --print $ vLength1 list1
-    --print $ vLength2 list1
-    print $ vMap0 (mkVarT testfn0) listM
-    print $ vMap1 (mkVarT testfn1) listM
-    print $ vMap2 (mkVarT testfn2) listM
+
     --print $ vLength1 listEnd
 
     --print listEnd
     --print $ (vMap0 (mkVarT ((+)10)) listBegin)
 
-    
     --print $ vCounter listEnd
     --print $ vCounter listEnd2
     --print $ vCounter listEnd3
