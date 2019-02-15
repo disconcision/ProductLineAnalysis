@@ -2,10 +2,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE BangPatterns #-}
 
-import VList
 import SPL
 import PropBDD
 import ShareVis
+--import VList
+import Shallow.VList
 
 
 import Control.Monad.State.Lazy
@@ -27,6 +28,7 @@ _p = neg p
 
 w :: Var Int
 w = mkVars [(1, pq), (11, p_q), (111, _pq), (1111, _p_q)]
+ww = mkVars [(7, pq), (70, p_q), (700, _pq), (7000, _p_q)]
 x = mkVars [(2, pq), (22, p_q), (222, _p)]
 z = mkVars [(0, p), (10, _p)]
 z1 = mkVars [(1, p), (11, _p)]
@@ -56,7 +58,7 @@ listMiddle = mkVList [x, y, z, w]
 
 
 
--- TYPE FIGURING
+-- TYPES CAST:
 
 -- type VList a = Var [a]
 -- newtype Var t = Var [(Val t)]
@@ -73,12 +75,16 @@ listMiddle = mkVList [x, y, z, w]
 
 
 
--- FOLD LIFTING
+-- BASIC vLIST fns:
 
 -- cond' :: Show a => Var Bool -> Var a -> Var a -> Var a
 -- vhead :: VList a -> Var a 
 -- vtail :: VList a -> VList a 
 -- vnull :: VList a -> Var Bool
+
+
+
+-- vFOLD IMPLEMENTATIONS
 
 vfoldrShallow :: Var (a -> b -> b) -> Var b -> Var [a] -> Var b
 vfoldrShallow = liftV3 foldr
@@ -97,53 +103,58 @@ vfoldr f init ls = cond' (vnull ls)
 instance Show (State a b) where
     show _ = "" -- (StateT f)
 
+
+
+-- vLENGTH IMPLEMENTATIONS
+
+-- 0: Shallow lifting
 vLength0 :: Var [a] -> Var Int 
 vLength0 = liftV length
 
-sLength1 :: [a] -> Int
-sLength1 ls = if (null ls) then 0 else ((+) 1 (sLength1 (tail ls)))
+-- sLength1 :: [a] -> Int
+-- sLength1 ls = if (null ls) then 0 else ((+) 1 (sLength1 (tail ls)))
 
+-- 1: Deep lifting, explicit recursion
 vLength1 :: Var [a] -> Var Int    
-vLength1 vl = cond' (vnull vl) (mkVarT 0) ((liftV2 (+)) (mkVarT 1) (vLength1 (vtail vl)))
+vLength1 vl = cond' (vnull vl) (mkVarT 0) ((liftV ((+) 1)) (vLength1 (vtail vl)))
 -- vLength0 vl = cond' (vnull vl) (mkVarT 0) (fmap (+) (mkVarT 1) <*> (vLength0 (vtail vl)))
 
+-- sLength2 :: [a] -> Int
+-- sLength2 ls = foldr (const ((+) 1)) 0 ls
+-- sLength2 ls = foldr (\x y -> (+) y 1) 0 ls
 
-sLength2 :: [a] -> Int
-sLength2 ls = foldr (const ((+) 1)) 0 ls
--- sLength1 ls = foldr (\x y -> (+) y 1) 0 ls
-
+-- 2: Deep lifting, deep-lifted fold
 vLength2 :: Show a => Var [a] -> Var Int
-vLength2 vl = vfoldr (mkVarT (\ x -> (+) 1)) (mkVarT 0) vl
+vLength2 vl = vfoldr (mkVarT (const ((+) 1))) (mkVarT 0) vl
 
 
 
+-- vMAP IMPLEMENTATIONS
 
+-- 0: Shallow lifting
 vMap0 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
 vMap0 = liftV2 map
 
-sMap0 :: (a -> b) -> [a] -> [b]
-sMap0 f ls = if null ls
-    then []
-    else (:) (f (head ls)) (sMap0 f (tail ls))
+-- sMap0 :: (a -> b) -> [a] -> [b]
+-- sMap0 f ls = if null ls
+--    then []
+--    else (:) (f (head ls)) (sMap0 f (tail ls))
 
+-- 1: Deep lifting, explicit recursion
 vMap1 :: Show b => Var (a -> b) -> Var [a] -> Var [b] -- VList a == Var [a]
 vMap1 f vl = cond' (vnull vl)
     (mkVarT [])
     $ (vCons ((<*>) f (vhead vl))) (vMap1 f (vtail vl))
 
+-- sMap1 :: (a -> b) -> [a] -> [b]
+-- sMap1 f ls = foldr (\x y -> (:) (f x) y) [] ls
 
-sMap1 :: (a -> b) -> [a] -> [b]
-sMap1 f ls = foldr (\x y -> (:) (f x) y) [] ls
-
-
--- implemented with (deep) vfoldr
+-- 2: Deep lifting, deep-lifted fold
 vMap2 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
 vMap2 f vl = vfoldr new_f (mkVarT []) vl
         where
             new_f = liftV (\vf -> (\ x y -> (:) (vf x) y)) f
 
--- do we actually want deep lifting to lift function args?
--- this presents issues like above
 
 
 
@@ -190,16 +201,19 @@ graphVList (Var ls) = showGraph $ fmap (\(a,b)-> (show b,a)) ls
 
 
 
+
+-- these need to have distinct implementations
+-- for the profiler to track them individually
 testfn0 x = 5+x
 testfn1 x = 5+x
 testfn2 x = 5+x
 -- note: belows registers 0 entries under main; ??
 --testfn = (+) 1 
 
-listN = mkVList[w,w,w,w,w,w,w,w,w,w] -- 40 distinct
-listE = mkVList[w,w,w,w,w,y,y,y,y,y] -- 4*5+5=25 distinct 
-listB = mkVList[y,y,y,y,y,w,w,w,w,w] -- 25 distinct
-listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- 6*4+4=28 distinct
+listN = mkVList[w,w,w,w,w,w,w,w,w,w] -- no sharing. 40 distinct
+listB = mkVList[y,y,y,y,y,w,w,w,w,w] -- shared prefix. 5+4*5= 25 distinct
+listE = mkVList[w,w,w,w,w,y,y,y,y,y] -- shared suffix. 4*5+5= 25 distinct 
+listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- share middle. 6*4+4= 28 distinct
 
 -- vMap0 - shallow lift
 -- vMap1 - deep lifted recursive
@@ -225,13 +239,15 @@ listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- 6*4+4=28 distinct
 
 main = do
 
-    print $ vLength0 listM
-    print $ vLength1 listM 
-    print $ vLength2 listM
+    let testList = listB
 
-    print $ vMap0 (mkVarT testfn0) listE
-    print $ vMap1 (mkVarT testfn1) listE
-    print $ vMap2 (mkVarT testfn2) listE
+    print $ vLength0 testList
+    print $ vLength1 testList 
+    print $ vLength2 testList
+
+    print $ vMap0 (mkVarT testfn0) testList
+    print $ vMap1 (mkVarT testfn1) testList
+    print $ vMap2 (mkVarT testfn2) testList
 
     --graphVList $ listEnd2
 
