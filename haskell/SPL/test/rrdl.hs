@@ -10,17 +10,32 @@ import PropBDD
 -- rule2: it's a fallthrough - might be a showstopper
 -- wait, how does this rule "know" if x occurs free in _A?
     -- is this going to compile-time error?
+    -- it seems to be scope aware, good
 
+ -- r1 is identity law for applicatives
+ -- r2 is homomorphism law specialized for constant fn   
 {-# RULES
 "r1" forall vx. apply (mkVarT (\x -> x)) vx = vx
-"r3" forall vx _A _B . apply (mkVarT (\ x -> (_A _B))) vx = (apply (apply (mkVarT (\ x -> _A)) vx) (apply (mkVarT (\ x -> _B)) vx))
-"r3_2" forall vx _A _B . apply (mkVarT (\ x y -> (_A _B))) vx = (apply (apply (mkVarT (\ x y -> _A)) vx) (apply (mkVarT (\ x y -> _B)) vx))
 "r2" forall vx _A . apply (mkVarT (\x -> _A)) vx = (mkVarT _A)
-
+"r3" forall vx vy (_A :: q -> r) (_B :: q) . apply (apply (mkVarT (\x y -> (_A _B))) vx) vy = apply (apply (apply (mkVarT (\x y -> _A)) vx) vy) (apply (apply (mkVarT (\x y -> _B)) vx) vy) 
 #-}
+--"r3" forall vx _A _B . apply (mkVarT (\ x -> (_A _B))) vx = (apply (apply (mkVarT (\ x -> _A)) vx) (apply (mkVarT (\ x -> _B)) vx))
+--"r3_2" forall vx _A _B . apply (mkVarT (\ x y -> (_A _B))) vx = (apply (apply (mkVarT (\ x y -> _A)) vx) (apply (mkVarT (\ x y -> _B)) vx))
+
+-- NOTE: !!!! had to stop apply,mkVarT from inlining in SPL.hs
+
 
 {-# NOINLINE foo #-}
 {-# NOINLINE bar #-}
+{-# NOINLINE goo #-}
+{-# NOINLINE gar #-}
+{-# NOINLINE sfoo  #-}
+{-# NOINLINE sbar  #-}
+{-# NOINLINE dfoo  #-}
+{-# NOINLINE dbar #-}
+
+--cant do this here, only at def site:
+--{-# NOINLINE apply #-}
 
 _p_, _q_ :: (String, Prop)
 univ@[_p_, _q_] = mkUniverse ["P", "Q"]
@@ -40,6 +55,47 @@ vbaz = mkVarT (\a b -> ((+) (foo a) (foo b)))
 va = mkVars [(1, pq), (2, p_q), (3, _pq), (4, _p_q)]
 vb = mkVars [(1, tt)]
 
+goo a = 1
+gar a = 1
+
+
+sfoo a = a + 1
+dfoo a = a + 1
+sbar a = a * 2
+dbar a = a * 2
+
+shallowBang :: Var Int -> Var Int -> Var Int
+shallowBang = liftV2 bang 
+    where
+        bang :: Int -> Int -> Int
+        bang a b = (+) (sfoo a) (sbar b)
+
+deepBang :: Var Int -> Var Int -> Var Int
+deepBang va vb =  (liftV2 (+)) (liftV dfoo va) (liftV dbar vb)
+
+a0 = mkVars [(1, pq), (10, p_q), (100, _pq), (1000, _p_q)]
+a1 = mkVars [(20, p), (200, _p)]
+
+-- stack ghc --profile -- -fenable-rewrite-rules -prof -fprof-auto-top -rtsopts rrdl.hs 
+-- stack exec -- ./rrdl +RTS -p  
+-- sfoo 4
+-- sbar 4
+-- dfoo 4
+-- dbar 2
+
+baz a b = ((+) (goo a) (gar b))
 
 main = do
-    print $ apply (apply (mkVarT (\a b -> ((+) (foo a) (foo b)))) va) vb
+    print $ apply (mkVarT (\x -> 1)) a0 -- r2 fires
+    print $ apply (mkVarT (\y -> y)) a0  -- r1 fires
+    print $ apply (mkVarT (\y -> (apply (mkVarT (\y -> y)) a0))) a0 -- r1 & r2 fire
+
+    -- apply (apply (mkVarT (\x y -> (_A _B))) vx) vy
+    print $ apply (apply (mkVarT (\a b -> (foo a))) a0) a1
+
+    print $ apply (apply (mkVarT (\a b -> (((+) (foo a)) (bar b)))) a0) a1
+
+    --print $ (liftV2 (\a b -> ((+) (goo a) (gar b)))) a0 a1
+    print $ liftV2 baz a0 a1
+    print $ shallowBang a0 a1
+    print $ deepBang a0 a1
