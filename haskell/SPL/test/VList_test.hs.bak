@@ -1,0 +1,535 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE BangPatterns #-}
+
+import SPL
+import PropBDD
+--import ShareVis
+--import VList
+import Shallow.VList
+
+
+--import Control.Monad.State.Lazy
+import Data.Tuple
+import Data.List
+
+_p_, _q_, _r_, _s_ :: (String, Prop)
+univ@[_p_, _q_, _r_, _s_] = mkUniverse ["P", "Q", "R", "S"]
+p = snd _p_
+q = snd _q_
+r = snd _r_
+s = snd _s_
+
+pq = conj[p,q]
+p_q = conj[p, neg q]
+_pq = conj[neg p, q]
+_p_q = conj[neg p, neg q]
+_p = neg p
+
+w :: Var Int
+w = mkVars [(1, pq), (11, p_q), (111, _pq), (1111, _p_q)]
+ww = mkVars [(7, pq), (70, p_q), (700, _pq), (7000, _p_q)]
+x = mkVars [(2, pq), (22, p_q), (222, _p)]
+z = mkVars [(0, p), (10, _p)]
+z1 = mkVars [(1, p), (10, _p)]
+y = mkVars [(0, tt)]
+y1 = mkVars [(1, tt)]
+y2 = mkVars [(2, tt)]
+y3 = mkVars [(3, tt)]
+y4 = mkVars [(4, tt)]
+
+
+l0 = vNil 
+l1 = vCons w l0
+l2 = vCons x l1
+l3 = vCons y l2
+l4 = vCons z l3
+
+listEnd = mkVList[y,y1,y2,y3] --4 (regardless of compaction)
+listEnd2 = mkVList[w,y,y1,y2] --7
+listEnd3 = mkVList[w,x,y1,y2] --9
+listEnd4 = mkVList[w,x,z,y1]  --10
+listEnd5 = mkVList[w,x,z,z1]  --11
+
+listBegin = mkVList[y, y, y, w]  --16
+
+listMiddle = mkVList [x, y, z, w]
+
+
+
+
+-- TYPES CAST:
+
+-- type VList a = Var [a]
+-- newtype Var t = Var [(Val t)]
+-- type Val a = (a, PresenceCondition)
+--  type PresenceCondition  = Prop
+
+-- so: Var t = [(t, Prop)]
+-- and: VList a = Var [a] = [([a], Prop)]
+
+-- which means
+-- vmap :: Var (a -> b) -> VList a -> VList b
+-- Vmap :: [(a -> b, Prop)] -> [([a], Prop)] -> [([b], Prop)]
+-- vmap = liftV2 map
+
+
+
+-- BASIC vLIST fns:
+
+-- cond' :: Show a => Var Bool -> Var a -> Var a -> Var a
+-- vhead :: VList a -> Var a 
+-- vtail :: VList a -> VList a 
+-- vnull :: VList a -> Var Bool
+--enable-library-profiling
+
+
+-- vFOLD IMPLEMENTATIONS
+
+vfoldrShallow :: Var (a -> b -> b) -> Var b -> Var [a] -> Var b
+vfoldrShallow = liftV3 foldr
+
+sFoldr :: (a -> b -> b) -> b -> [a] -> b
+sFoldr f init ls = if null ls
+    then init
+    else ((f (head ls)) (sFoldr f init (tail ls)))
+
+vfoldr :: Show b => Var (a -> b -> b) -> Var b -> Var [a] -> Var b
+vfoldr f init ls = cond' (vnull ls)
+    init
+    $ ((<*>) ((<*>) f (vhead ls)) (vfoldr f init (vtail ls)))
+
+    -- because cond' <= Show
+--instance Show (State a b) where
+--    show _ = "" -- (StateT f)
+-- sMap0 :: (a -> b) -> [a] -> [b]-- sMap0 :: (a -> b) -> [a] -> [b]
+-- sMap0 f ls = if null ls
+--    then []
+--    else (helper (head ls) (tail ls))
+--      where helper = \x xs -> (:) (f x) (sMap0 f xs)
+-- sMap0 f ls = if null ls
+--    then []
+--    else (helper (head ls) (tail ls))
+--      where helper = \x xs -> (:) (f x) (sMap0 f xs)
+
+
+-- vLENGTH IMPLEMENTATIONS
+
+-- 0: Shallow lifting
+vLength0 :: Var [a] -> Var Int 
+vLength0 = liftV length
+
+-- sLength1 :: [a] -> Int
+-- sLength1 ls = if (null ls) then 0 else (((+) 1) (sLength1 (tail ls)))
+
+-- 1: Deep lifting, explicit recursion
+vLength1 :: Var [a] -> Var Int    
+vLength1 vl = cond' (vnull vl) (mkVarT 0) ((liftV ((+) 1)) (vLength1 (vtail vl)))
+-- vLength0 vl = cond' (vnull vl) (mkVarT 0) (fmap (+) (mkVarT 1) <*> (vLength0 (vtail vl)))
+
+-- sLength2 :: [a] -> Int
+-- sLength2 ls = foldr (const ((+) 1)) 0 ls
+-- sLength2 ls = foldr (\x y -> (+) y 1) 0 ls
+
+-- 2: Deep lifting, deep-lifted fold
+vLength2 :: Show a => Var [a] -> Var Int
+vLength2 vl = vfoldr (mkVarT (\ y x -> ((+) 1 x))) (mkVarT 0) vl
+
+
+
+-- vMAP IMPLEMENTATIONS
+
+-- 0: Shallow lifting
+vMap0 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
+vMap0 = liftV2 map
+
+-- sMap0 :: (a -> b) -> [a] -> [b]
+-- sMap0 f ls = if null ls
+--    then []
+--    else (:) (f (head ls)) (sMap0 f (tail ls))
+
+
+-- 1: Deep lifting, explicit recursion
+vMap1 :: Show b => Var (a -> b) -> Var [a] -> Var [b] -- VList a == Var [a]
+vMap1 f vl = cond' (vnull vl)
+    (mkVarT [])
+    $ (vCons (((<*>) f) (vhead vl))) (vMap1 f (vtail vl))
+
+-- sMap1 :: (a -> b) -> [a] -> [b]
+-- sMap1 f ls = foldr (\x y -> (:) (f x) y) [] ls
+-- CAN BE REWRITTEN AS
+-- sMap1 f ls = foldr new_f [] ls
+--     where new_f x y = (:) (f x) y)
+
+
+-- 2: Deep lifting, deep-lifted fold
+vMap2 :: Show b => Var (a -> b) -> Var [a] -> Var [b]
+vMap2 f vl = vfoldr new_f (mkVarT []) vl
+        where
+            new_f = liftV (\vf -> (\ x y -> (:) (vf x) y)) f
+
+
+foo = ((+) 1)
+bar = ((+) 2)
+
+baz a b = (((+) (foo a)) (bar b))
+
+dbaz0 = liftV2 (\a b -> (((+) (foo a)) (bar b)))
+
+--dbaz1 = (\da db -> (<*> (\a -> ((+) (foo a))) (\b -> (bar b))))
+
+
+dbaz7 :: Var Int -> Var Int -> Var Int 
+--dbaz7 da db = (liftV2 (+)) (liftV foo da) (liftV bar db)
+--dbaz7 da db = (liftV (+)) (liftV foo da) <*> (liftV bar db)
+dbaz7 da db = ((<*>) ((liftV (+)) ((liftV foo) da)) ((liftV bar) db))
+-- or:
+dbaz7' da db = ((liftV2 (+)) ((liftV foo) da)) ((liftV bar) db)
+
+
+{- The above shows we can't proceed in a blind top-down fashion,
+    because in the case of an application, we need to know if we
+    need to know if the function expression is going to be wrapped,
+    and hence we need to <*> apply it.
+
+    Let's say we assume no fn application returns a function.
+    Then each application of arity X can be turned into an application
+    where the fexpr is liftVXd and its arguments recursively lifted.
+    
+
+-}
+
+my_apply :: Var (a -> b) -> Var a -> Var b
+my_apply (Var f) (Var x) =
+    Var [((f' x'), pc) | (f',fpc) <- f, (x',xpc) <- x,
+                         let pc = conj [fpc, xpc], sat(pc)] 
+
+ {-
+my_apply :: Var (a -> b) -> Var a -> Var b
+my_apply (Var f) (Var x) = (whatever0 f x)
+(apply vfoo vx) where vfoo = mkVarT foo
+(whatever foo x)
+
+
+my_apply :: Var (a -> (b -> c)) -> Var a -> Var (b -> c)
+(apply (apply baz va) vb)
+
+ -}                        
+
+my_apply' :: Var (a -> b) -> Var a -> Var b
+my_apply' (Var f) (Var x) =
+    (Var (f >>= (\(f', fpc) -> (x >>= (\(x', xpc) ->
+        let pc = conj [fpc, xpc] in
+            if (sat pc) then [((f' x'), pc)] else [])))))
+
+{-
+
+TRIAL 1: APPLICATION
+
+
+roo x = bar x
+vroo = mkVarT roo
+vx = mkVarT 1
+
+t1_step1 = (apply vroo vx) :: Var Int
+
+-- 1. inline apply
+t1_step2 = Var [((f' x'), pc) | (f',fpc) <- vroo, (x',xpc) <- vx,
+                         let pc = conj [fpc, xpc], sat(pc)]
+-- 2. inline vfoo
+t1_step3 = Var [((f' x'), pc) | (f',fpc) <- mkVarT (\x -> bar x), (x',xpc) <- vx,
+                         let pc = conj [fpc, xpc], sat(pc)]
+
+-- @ expansion:
+Var [((f' x'), pc) | (f',fpc) <- [((\x -> bar x),tt)], (x',xpc) <- vx,
+                         let pc = conj [fpc, xpc], sat(pc)] 
+Var [((bar x'), xpc) | (x',xpc) <- vx, sat(xpc)] 
+-}
+
+
+
+{-
+
+TRIAL 2: COMPOSITION
+
+goo x = foo (bar x)
+vgoo = mkVarT goo
+vgoo = mkVarT (\x -> foo (bar x))
+
+EXPRESSION TO EXPAND: (apply vgoo vx) :: Var Int
+
+1. Var [((f' x'), pc) | (f',fpc) <- vgoo, (x',xpc) <- vx,
+                         let pc = conj [fpc, xpc], sat(pc)] 
+2. Var [((f' x'), pc) | (f',fpc) <- mkVarT (\x -> foo (bar x)), (x',xpc) <- vx,
+                         let pc = conj [fpc, xpc], sat(pc)]
+X. Var [((foo (bar x')), xpc) | (x',xpc) <- vx, sat(xpc)]
+
+TRIAL 3: BINARY
+
+baz a b = ((+) (foo a) (foo b))
+vbaz = mkVarT (\a b -> ((+) (foo a) (foo b)))
+
+EXPRESSION TO EXPAND: (apply (apply baz va) vb)
+NOTE: apply "::" Var (a -> (b -> c)) -> Var a -> Var (b -> c)
+
+
+1. inline outer apply
+Var [((f' x'), pc) | (f',fpc) <- (apply baz va), (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)] 
+2. inline inner apply (at this point, it's already too late?)
+   we'd need to do something with baz first?
+Var [((f' x'), pc) | (f',fpc) <-
+                        Var [((g' y'), pc2) | (g',gpc) <- baz, (y',ypc) <- va,
+                         let pc2 = conj [gpc, ypc], sat(pc2)]
+                        , (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)]
+3. inline baz
+Var [((f' x'), pc) | (f',fpc) <-
+                        Var [((g' y'), pc2) | (g',gpc) <- mkVarT (\a b -> ((+) (foo a) (foo b))), (y',ypc) <- va,
+                         let pc2 = conj [gpc, ypc], sat(pc2)]
+                        , (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)]
+X. expansion would look like:
+Var [((f' x'), pc) | (f',fpc) <-
+                        Var [((\a b -> ((+) (foo a) (foo b))) y', ypc) | (y',ypc) <- va, sat(ypc)]
+                        , (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)]
+Var [((f' x'), pc) | (f',fpc) <-
+                        Var [((\b -> ((+) (foo y') (foo b))), ypc) | (y',ypc) <- va, sat(ypc)]
+                        , (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)]
+Var [((f' x'), pc) | (f',fpc) <-
+                        Var [((\b -> ((+) (foo y') (foo b))), ypc) | (y',ypc) <- va, sat(ypc)]
+                        , (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)]   
+akward to go further but it essentially remains a binary list comprehension and hence order n*m
+
+instead, back to 1:
+Var [((f' x'), pc) | (f',fpc) <- (apply baz va), (x',xpc) <- vb,
+                         let pc = conj [fpc, xpc], sat(pc)] 
+actually no
+
+(apply (apply baz va) vb)
+(apply (apply (mkVarT (\a -> (\b -> ((+) (foo a) (foo b))))) va) vb)
+(apply (apply (mkVarT (\a -> (\b -> ((+) (foo a) (foo b))))) va) vb)
+
+
+
+want to get to something like:
+(apply ((liftV (+)) ((liftV foo) da)) ((liftV bar) db))
+-}
+
+borg = mkVarT baz
+zzt = (apply (apply borg (mkVarT 1)) (mkVarT 2))
+
+
+bat a b = ((+) (foo a) (foo b))
+vbat = mkVarT (\a b -> ((+) (foo a) (foo b)))
+va = (mkVarT 1)
+vb = (mkVarT 2)
+
+step1 = (apply (apply vbat va) vb)
+step2 = (apply (apply (mkVarT (\a -> (\b -> ((+) (foo a) (foo b))))) va) vb)
+--step2a = (apply (liftV (\a -> (\b -> ((+) (foo a) (foo b)))) va) vb)
+step3 = (apply (apply int1 int2) int3)
+-- note that the shape of the above expression is the shape of the inside of the lambad
+-- not the coincidentally similar shape of the initial expression
+step3_reduced = (apply (apply (mkVarT (+)) (apply (mkVarT foo) va)) (apply (mkVarT foo) va))
+
+--int1'' = (liftV2 (\ a b -> (+)) va vb)
+--int1' = (apply (liftV (\ a b -> (+)) va) vb)
+int1 = (apply (apply (mkVarT (\ a b -> (+))) va) vb)
+-- since + != a
+step1_int1'' = (apply (mkVarT (\b -> (+))) vb)
+-- since + != b
+step2_int1'' = (mkVarT (+))
+
+--int2' = (liftV2 (\ a b -> (foo a)) va vb)
+int2 = (apply (apply (mkVarT (\ a b -> (foo a))) va) vb)
+int2_reduced = (apply (mkVarT foo) va)
+int2_step = (apply int21 int22) where
+    int21 = (apply (apply (mkVarT (\ a b -> foo)) va) vb)
+    int22 = (apply (apply (mkVarT (\ a b -> a)) va) vb)
+int21_reduced = (mkVarT foo)
+int22_redduced = va
+
+int3 = (liftV2 (\ a b -> (foo b)) va vb)
+int3_reduced = (apply (mkVarT foo) vb)
+
+-- (apply (mkVarT (\ a -> <literal>)) va)
+-- (apply (mkVarT (\ a -> <literal>)) va)
+
+_A = id
+_B = id
+_F = id
+vx = mkVarT 0
+vy = mkVarT 0
+
+-- 1: identity
+rule1_lhs = (apply (mkVarT (\x -> x)) vx)
+rule1_rhs = vx
+
+-- 2: not in there
+rule2_lhs = (apply (mkVarT (\x -> _A)) vx)
+-- where _A has no occurences of x
+rule2rhs = (mkVarT _A)
+-- this needs to happen or elsse we're not getting speedup
+
+rule3_lhs = (apply (mkVarT (\ x -> (_A _B))) vx)
+rule3_rhs = (apply (apply (mkVarT (\ x -> _A)) vx) (apply (mkVarT (\ x -> _B)) vx))
+
+-- seperate n-ary cases for now.
+rule3a_lhs = (apply (mkVarT (\ x y -> (_A _B))) vx)
+rule3a_rhs = (apply (apply (mkVarT (\ x y -> _A)) vx) (apply (mkVarT (\ x y -> _B)) vx))
+
+-- trying to do n-ary case with unary lambdas is screwy:
+ruleX_lhs = (apply (apply (mkVarT (\ x -> (\ y -> ((_F _A) _B)))) vx) vy)
+ruleX_rhs0 = (apply (mkVarT (\ y -> (apply (mkVarT (\ x -> ((_F _A) _B))) vx))) vy)
+ruleX_rhs1 = (apply (mkVarT (\ y -> (apply (apply (mkVarT (\x -> (_F _A))) vx) (apply (mkVarT (\x -> _B)) vx)))) vy)
+ruleX_rhs2 = (apply (mkVarT (\ y -> (apply (apply (apply (mkVarT (\ x -> _F)) vx) (apply (mkVarT (\ x -> _A)) vx)) (apply (mkVarT (\x -> _B)) vx)))) vy)
+
+
+-- ? remember there's a potential issue with lambda param order ?
+                       
+
+--step5 = (apply ((\vva -> (\b -> ((+) (foo a) (foo b)))) va) vb)
+--step5 = (apply (\vva -> (\b -> ((+) (foo a) (foo b)) )va) vb)
+stepN' = (apply (liftV (+) (liftV foo va)) (liftV bar vb)) -- same
+stepN = (apply ((liftV (+)) ((liftV foo) va)) ((liftV bar) vb))
+-- write length
+
+-- OP COUNTING
+
+varToList :: Var a -> [a]
+varToList (Var []) = []
+varToList (Var ((t,prop):xs)) = t : (varToList (Var xs)) 
+
+
+vCounter :: Show a => VList a -> Int
+vCounter vls = if null (head $ varToList vls)
+    then 0 else length (varToList (vhead vls)) + vCounter (vtail vls)
+  
+
+
+{-
+vCount2 :: Show a => VList a -> Int
+vCount2 vls = vfoldr f init vls
+    where init
+  -}          
+
+
+-- MISC
+{-
+getNames :: VList a -> Var [Int]
+getNames vl = vfoldr (mkVarT f) (mkVarT []) vl
+        where
+            f x names = (getName x) : names
+
+
+graphVList (Var ls) = showGraph $ fmap (\(a,b)-> (show b,a)) ls
+-}
+
+
+
+-- these need to have distinct implementations
+-- for the profiler to track them individually
+testfn0 x = 5+x
+testfn1 x = 5+x
+testfn2 x = 5+x
+-- note: belows registers 0 entries under main; ??
+--testfn = (+) 1 
+
+listN = mkVList[w,w,w,w,w,w,w,w,w,w] -- no sharing. 40 distinct
+listB = mkVList[y,y,y,y,y,w,w,w,w,w] -- shared prefix. 5+4*5= 25 distinct
+listE = mkVList[w,w,w,w,w,y,y,y,y,y] -- shared suffix. 4*5+5= 25 distinct 
+listM = mkVList[w,w,w,y,y,y,y,w,w,w] -- share middle. 6*4+4= 28 distinct
+
+-- vMap0 - shallow lift
+-- vMap1 - deep lifted recursive
+-- vMap2 - deep lifted vfoldr (itself deep lifted)
+
+
+-- results (num calls to testfnX)
+--       vMap0 vMap1 vMap2
+-- listN    40    40    40
+-- listE    40    25    25
+-- listB    40    25    40
+-- listM    40    28    40
+
+
+-- above: note that resulting lists are correct
+
+
+-- results (num variations in length)
+--       vLength0 vLength1 vLength2
+-- listN        4        1        4
+-- listE        4        1        4
+-- listB        4        1        2
+-- listM        3        1        3
+
+
+-- SHALLOW v DEEP fn counts
+
+-- all :: Int -> Int
+sfoo a = a + 1
+dfoo a = a + 1
+sbar a = a * 2
+dbar a = a * 2
+
+shallowBang :: Var Int -> Var Int -> Var Int
+shallowBang = liftV2 bang 
+    where
+        bang :: Int -> Int -> Int
+        bang a b = (+) (sfoo a) (sbar b)
+
+deepBang :: Var Int -> Var Int -> Var Int
+deepBang va vb =  (liftV2 (+)) (liftV dfoo va) (liftV dbar vb)
+
+a0 = mkVars [(1, pq), (10, p_q), (100, _pq), (1000, _p_q)]
+a1 = mkVars [(20, tt)]
+
+-- As expected, sfoo, sbar, and dfoo are executed 4 times,
+-- but dbar is executed only once
+
+
+main = do
+
+    print $ shallowBang a0 a1
+    print $ deepBang a0 a1
+
+
+
+    let testList = listE
+
+    print $ vfoldr (mkVarT(\ x y -> 0)) (mkVarT 6) testList
+    --print $ vfoldr (mkVarT(\ x y -> 0)) (mkVarT 6) testList
+
+    print $ vLength0 testList
+    print $ vLength1 testList 
+    print $ vLength2 testList
+
+    print $ vMap0 (mkVarT testfn0) testList
+    print $ vMap1 (mkVarT testfn1) testList
+    print $ vMap2 (mkVarT testfn2) testList
+
+    --graphVList $ listEnd2
+
+    --print $ vLength1 listEnd
+
+    --print listEnd
+    --print $ (vMap0 (mkVarT ((+)10)) listBegin)
+
+    --print $ vCounter listEnd
+    --print $ vCounter listEnd2
+    --print $ vCounter listEnd3
+    --print $ vCounter listEnd4
+    --print $ vCounter listEnd5
+    --print $ vCounter listBegin
+
+    --print $ getNames listEnd
+    --print $ case listEnd of Var ls -> fmap (\(a,b)-> (show b,a)) ls
+    
+    
+    
+    --print $ vfoldr (mkVarT (+)) (mkVarT 0) l3
+  

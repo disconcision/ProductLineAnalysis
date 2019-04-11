@@ -88,6 +88,9 @@ instance Applicative Var where
 --    Var ((t :: * -> *) (s :: *))      = Var' (t (Var' s))
 --    Var (t :: *)                      = Var' t
 
+{-# NOINLINE apply #-}
+{-# NOINLINE mkVarT #-}
+
 mkVar :: t -> PresenceCondition -> Var t
 mkVar v pc = Var [(v,pc)]
 
@@ -120,7 +123,8 @@ groupVals xs cmp = groupVals_ xs [] cmp
 -- compaction seems to be turning some lazy expressions into strict,
 -- resulting in condiitional expression bugs
 compact :: Var t -> Var t
-compact (Var v) = Var (groupVals v (===))
+compact x = x
+--compact (Var v) = Var (groupVals v (===))
 
 compactEq :: Eq t => Var t -> Var t
 compactEq (Var v) = Var (groupVals v (====))

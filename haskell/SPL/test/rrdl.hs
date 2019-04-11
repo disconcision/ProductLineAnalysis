@@ -17,9 +17,10 @@ import PropBDD
 {-# RULES
 "r1" forall vx. apply (mkVarT (\x -> x)) vx = vx
 "r2" forall vx _A . apply (mkVarT (\x -> _A)) vx = (mkVarT _A)
-"r3" forall vx vy (_A :: q -> r) (_B :: q) . apply (apply (mkVarT (\x y -> (_A _B))) vx) vy = apply (apply (apply (mkVarT (\x y -> _A)) vx) vy) (apply (apply (mkVarT (\x y -> _B)) vx) vy) 
+"r3a" forall vx _A _B . apply (mkVarT (\ x -> (_A _B))) vx = (apply (apply (mkVarT (\ x -> _A)) vx) (apply (mkVarT (\ x -> _B)) vx))
+"r3b" forall vx vy (_A :: q -> r) (_B :: q) . apply (apply (mkVarT (\x y -> (_A _B))) vx) vy = apply (apply (apply (mkVarT (\x y -> _A)) vx) vy) (apply (apply (mkVarT (\x y -> _B)) vx) vy) 
 #-}
---"r3" forall vx _A _B . apply (mkVarT (\ x -> (_A _B))) vx = (apply (apply (mkVarT (\ x -> _A)) vx) (apply (mkVarT (\ x -> _B)) vx))
+--
 --"r3_2" forall vx _A _B . apply (mkVarT (\ x y -> (_A _B))) vx = (apply (apply (mkVarT (\ x y -> _A)) vx) (apply (mkVarT (\ x y -> _B)) vx))
 
 -- NOTE: !!!! had to stop apply,mkVarT from inlining in SPL.hs

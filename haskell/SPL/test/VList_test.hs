@@ -4,7 +4,7 @@
 
 import SPL
 import PropBDD
---import ShareVis
+import ShareVis
 --import VList
 import Shallow.VList
 
@@ -334,30 +334,64 @@ step2 = (apply (apply (mkVarT (\a -> (\b -> ((+) (foo a) (foo b))))) va) vb)
 step3 = (apply (apply int1 int2) int3)
 -- note that the shape of the above expression is the shape of the inside of the lambad
 -- not the coincidentally similar shape of the initial expression
-step3' = (apply (apply (mkVarT (+)) (apply (mkVarT foo) va)) (apply (mkVarT foo) va))
+step3_reduced = (apply (apply (mkVarT (+)) (apply (mkVarT foo) va)) (apply (mkVarT foo) va))
 
-int1 = (liftV2 (\ a b -> (+)) va vb)
-int1' = (apply (liftV (\ a b -> (+)) va) vb)
-int1'' = (apply (apply (mkVarT (\ a b -> (+))) va) vb)
+--int1'' = (liftV2 (\ a b -> (+)) va vb)
+--int1' = (apply (liftV (\ a b -> (+)) va) vb)
+int1 = (apply (apply (mkVarT (\ a b -> (+))) va) vb)
 -- since + != a
 step1_int1'' = (apply (mkVarT (\b -> (+))) vb)
 -- since + != b
 step2_int1'' = (mkVarT (+))
 
-int2 = (liftV2 (\ a b -> (foo a)) va vb)
-int2'' = (apply (apply (mkVarT (\ a b -> (foo a))) va) vb)
-step1_int2'' = (apply (apply (mkVarT (\ a b -> (foo a))) va) vb)
-step2_int2'' = (apply int21 int22)
-int21 = (apply (apply (mkVarT (\ a b -> foo)) va) vb)
-step_int21 = mkVarT foo
-int22 = (apply (apply (mkVarT (\ a b -> a)) va) vb)
-step_int22 = va
-step3_int2'' = (apply (mkVarT foo) va)
+--int2' = (liftV2 (\ a b -> (foo a)) va vb)
+int2 = (apply (apply (mkVarT (\ a b -> (foo a))) va) vb)
+int2_reduced = (apply (mkVarT foo) va)
+int2_step = (apply int21 int22) where
+    int21 = (apply (apply (mkVarT (\ a b -> foo)) va) vb)
+    int22 = (apply (apply (mkVarT (\ a b -> a)) va) vb)
+int21_reduced = (mkVarT foo)
+int22_redduced = va
 
--- remember there's a potential issue here with lambda param order
 int3 = (liftV2 (\ a b -> (foo b)) va vb)
-step_int3 = (apply (mkVarT foo) vb)
+int3_reduced = (apply (mkVarT foo) vb)
+
+-- (apply (mkVarT (\ a -> <literal>)) va)
+-- (apply (mkVarT (\ a -> <literal>)) va)
+
+_A = id
+_B = id
+_F = id
+vx = mkVarT 0
+vy = mkVarT 0
+
+-- 1: identity
+rule1_lhs = (apply (mkVarT (\x -> x)) vx)
+rule1_rhs = vx
+
+-- 2: not in there
+rule2_lhs = (apply (mkVarT (\x -> _A)) vx)
+-- where _A has no occurences of x
+rule2rhs = (mkVarT _A)
+-- this needs to happen or elsse we're not getting speedup
+
+rule3_lhs = (apply (mkVarT (\ x -> (_A _B))) vx)
+rule3_rhs = (apply (apply (mkVarT (\ x -> _A)) vx) (apply (mkVarT (\ x -> _B)) vx))
+
+-- seperate n-ary cases for now.
+rule3a_lhs = (apply (mkVarT (\ x y -> (_A _B))) vx)
+rule3a_rhs = (apply (apply (mkVarT (\ x y -> _A)) vx) (apply (mkVarT (\ x y -> _B)) vx))
+
+-- trying to do n-ary case with unary lambdas is screwy:
+ruleX_lhs = (apply (apply (mkVarT (\ x -> (\ y -> ((_F _A) _B)))) vx) vy)
+ruleX_rhs0 = (apply (mkVarT (\ y -> (apply (mkVarT (\ x -> ((_F _A) _B))) vx))) vy)
+ruleX_rhs1 = (apply (mkVarT (\ y -> (apply (apply (mkVarT (\x -> (_F _A))) vx) (apply (mkVarT (\x -> _B)) vx)))) vy)
+ruleX_rhs2 = (apply (mkVarT (\ y -> (apply (apply (apply (mkVarT (\ x -> _F)) vx) (apply (mkVarT (\ x -> _A)) vx)) (apply (mkVarT (\x -> _B)) vx)))) vy)
+
+
+-- ? remember there's a potential issue with lambda param order ?
                        
+
 --step5 = (apply ((\vva -> (\b -> ((+) (foo a) (foo b)))) va) vb)
 --step5 = (apply (\vva -> (\b -> ((+) (foo a) (foo b)) )va) vb)
 stepN' = (apply (liftV (+) (liftV foo va)) (liftV bar vb)) -- same
