@@ -26,7 +26,7 @@ test-suite spl-test
   main-is:             VList_test.hs
   --SPL_test.hs
 --  other-modules:       SPL_prop
-  build-depends:       base, QuickCheck, SPL
+  build-depends:       base, QuickCheck, SPL, split, parsec
   -- added profiling options -prof -fprof-auto (andrew)
   ghc-options:         -O2 -threaded -rtsopts -with-rtsopts=-N -fprof-auto-top -fenable-rewrite-rules -O -fglasgow-exts -ddump-simpl-stats
   default-language:    Haskell2010
